@@ -13,8 +13,8 @@ pub enum PathOption {
     /// For matched paths, overrides the FormatOption.trailing_comma provided default.
     TrailingCommas(bool),
 
-    /// For matched paths, overrides the FormatOption.collapse_container_of_one provided default.
-    CollapseContainersOfOne(bool),
+    /// For matched paths, overrides the FormatOption.max_inline_children provided default.
+    MaxInlineChildren(usize),
 
     /// For matched paths, overrides the FormatOption.sort_array_items provided default.
     SortArrayItems(bool),
@@ -32,7 +32,7 @@ impl PartialEq for PathOption {
         matches!(
             (self, other),
             (&TrailingCommas(..), &TrailingCommas(..))
-                | (&CollapseContainersOfOne(..), &CollapseContainersOfOne(..))
+                | (&MaxInlineChildren(..), &MaxInlineChildren(..))
                 | (&SortArrayItems(..), &SortArrayItems(..))
                 | (&PropertyNameOrder(..), &PropertyNameOrder(..))
         )
@@ -46,11 +46,11 @@ impl Hash for PathOption {
         use PathOption::*;
         state.write_u32(match self {
             TrailingCommas(..) => 1,
-            CollapseContainersOfOne(..) => 2,
+            MaxInlineChildren(..) => 2,
             SortArrayItems(..) => 3,
             PropertyNameOrder(..) => 4,
         });
-        state.finish();
+        let _ = state.finish();
     }
 }
 
@@ -63,9 +63,9 @@ pub struct FormatOptions {
     /// Add a trailing comma after the last element in an array or object.
     pub trailing_commas: bool,
 
-    /// If an array or object has only one item (or is empty), and no internal comments, collapse
-    /// the array or object to a single line.
-    pub collapse_containers_of_one: bool,
+    /// If an array or object has at most this many items, and no internal comments, collapse the
+    /// array or object to a single line. Set to 0 to disable inline containers.
+    pub max_inline_children: usize,
 
     /// If true, sort array primitive values lexicographically. Be aware that the order may not
     /// matter in some use cases, but can be very important in others. Consider setting this
@@ -82,7 +82,7 @@ impl Default for FormatOptions {
         FormatOptions {
             indent_by: 4,
             trailing_commas: true,
-            collapse_containers_of_one: false,
+            max_inline_children: 0,
             sort_array_items: false,
             options_by_path: HashMap::new(),
         }

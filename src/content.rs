@@ -183,6 +183,10 @@ impl Comments {
     pub fn end_of_line(&self) -> &Option<String> {
         &self.end_of_line_comment
     }
+
+    fn has_comments(&self) -> bool {
+        !self.before_value.is_empty() || self.end_of_line_comment.is_some()
+    }
 }
 
 /// A struct used for capturing comments at the end of an JSON5 array or object, which are not
@@ -392,9 +396,19 @@ impl Value {
     }
 
     /// Returns true if this value has any block, line, or end-of-line comment(s).
-    pub fn has_comments(&mut self) -> bool {
-        let comments = self.comments();
-        !comments.before_value().is_empty() || comments.end_of_line().is_some()
+    pub fn has_comments(&self) -> bool {
+        self.comments().has_comments()
+    }
+
+    pub(crate) fn can_inline(&self, max_inline_children: usize) -> bool {
+        if self.has_comments() {
+            return false;
+        }
+        match self {
+            Value::Primitive { .. } => true,
+            Value::Array { val, .. } => val.can_inline(max_inline_children),
+            Value::Object { val, .. } => val.can_inline(max_inline_children),
+        }
     }
 }
 
@@ -450,9 +464,6 @@ pub(crate) trait Container {
     /// and given format options.
     fn format_content<'a>(&self, formatter: &'a mut Formatter) -> Result<&'a mut Formatter, Error>;
 
-    /// Retrieves an immutable reference to the `contained_comments` attribute.
-    fn contained_comments(&self) -> &ContainedComments;
-
     /// Retrieves a mutable reference to the `contained_comments` attribute.
     fn contained_comments_mut(&mut self) -> &mut ContainedComments;
 
@@ -478,11 +489,6 @@ pub(crate) trait Container {
     /// See `ContainedComments::add_block_comment`.
     fn add_block_comment(&mut self, comment: Comment) -> Result<(), Error> {
         self.contained_comments_mut().add_block_comment(comment)
-    }
-
-    /// See `ContainedComments::has_pending_comments`.
-    fn has_pending_comments(&self) -> bool {
-        self.contained_comments().has_pending_comments()
     }
 
     /// See `ContainedComments::take_pending_comments`.
@@ -511,6 +517,16 @@ pub struct Array {
 }
 
 impl Array {
+    fn can_inline(&self, max_inline_children: usize) -> bool {
+        max_inline_children > 0
+            && self.items.len() <= max_inline_children
+            && self.contained_comments.pending_comments.is_empty()
+            && self
+                .items
+                .iter()
+                .all(|item| item.borrow().can_inline(max_inline_children))
+    }
+
     /// Returns an iterator over the array items. Items must be dereferenced to access
     /// the `Value`. For example:
     ///
@@ -578,7 +594,10 @@ impl Array {
     }
 
     fn format<'a>(&self, formatter: &'a mut Formatter) -> Result<&'a mut Formatter, Error> {
-        formatter.format_container("[", "]", |formatter| self.format_content(formatter))
+        let max_inline_children = formatter.options_in_scope().max_inline_children;
+        formatter.format_container("[", "]", self.can_inline(max_inline_children), |formatter| {
+            self.format_content(formatter)
+        })
     }
 }
 
@@ -623,10 +642,6 @@ impl Container for Array {
         }
 
         formatter.format_trailing_comments(&self.contained_comments.pending_comments)
-    }
-
-    fn contained_comments(&self) -> &ContainedComments {
-        &self.contained_comments
     }
 
     fn contained_comments_mut(&mut self) -> &mut ContainedComments {
@@ -711,6 +726,16 @@ pub struct Object {
 }
 
 impl Object {
+    fn can_inline(&self, max_inline_children: usize) -> bool {
+        max_inline_children > 0
+            && self.properties.len() <= max_inline_children
+            && self.contained_comments.pending_comments.is_empty()
+            && self
+                .properties
+                .iter()
+                .all(|property| property.value.borrow().can_inline(max_inline_children))
+    }
+
     /// Retrieves an iterator from the `properties` field.
     #[inline]
     pub fn properties(&self) -> impl Iterator<Item = &Property> {
@@ -786,7 +811,10 @@ impl Object {
     }
 
     fn format<'a>(&self, formatter: &'a mut Formatter) -> Result<&'a mut Formatter, Error> {
-        formatter.format_container("{", "}", |formatter| self.format_content(formatter))
+        let max_inline_children = formatter.options_in_scope().max_inline_children;
+        formatter.format_container("{", "}", self.can_inline(max_inline_children), |formatter| {
+            self.format_content(formatter)
+        })
     }
 }
 
@@ -852,10 +880,6 @@ impl Container for Object {
         }
 
         formatter.format_trailing_comments(&self.contained_comments.pending_comments)
-    }
-
-    fn contained_comments(&self) -> &ContainedComments {
-        &self.contained_comments
     }
 
     fn contained_comments_mut(&mut self) -> &mut ContainedComments {

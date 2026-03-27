@@ -68,7 +68,7 @@
 //!
 //!   let options = FormatOptions {
 //!       indent_by: 2,
-//!       collapse_containers_of_one: true,
+//!       max_inline_children: 1,
 //!       options_by_path: hashmap! {
 //!           "/*" => hashset! {
 //!               PathOption::PropertyNameOrder(vec![

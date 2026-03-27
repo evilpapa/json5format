@@ -47,8 +47,8 @@ impl SubpathOptions {
             use PathOption::*;
             match path_option {
                 TrailingCommas(path_value) => self.options.trailing_commas = *path_value,
-                CollapseContainersOfOne(path_value) => {
-                    self.options.collapse_containers_of_one = *path_value
+                MaxInlineChildren(path_value) => {
+                    self.options.max_inline_children = *path_value
                 }
                 SortArrayItems(path_value) => self.options.sort_array_items = *path_value,
                 PropertyNameOrder(property_names) => {
@@ -172,6 +172,9 @@ pub(crate) struct Formatter {
     /// The 1-based column number of the next character to be appended.
     column: usize,
 
+    /// Tracks whether the current container should be formatted inline.
+    inline_container_stack: Vec<bool>,
+
     /// While generating the formatted document, these are the options to be applied at each nesting
     /// depth and path, from the document root to the object or array currently being generated. If
     /// the current path has no explicit options, the value at the top of the stack is None.
@@ -196,6 +199,7 @@ impl Formatter {
             pending_indent: false,
             bytes: vec![],
             column: 1,
+            inline_container_stack: vec![],
             subpath_options_stack: vec![Some(document_root_options_ref)],
             default_options,
         }
@@ -262,16 +266,23 @@ impl Formatter {
         &mut self,
         left_brace: &str,
         right_brace: &str,
+        inline: bool,
         content_fn: F,
     ) -> Result<&mut Formatter, Error>
     where
         F: FnOnce(&mut Formatter) -> Result<&mut Formatter, Error>,
     {
-        self.append(left_brace)?
-            .increase_indent()?
-            .format_content(content_fn)?
-            .decrease_indent()?
-            .append(right_brace)
+        self.append(left_brace)?;
+        self.inline_container_stack.push(inline);
+        if inline {
+            self.format_content(content_fn)?;
+        } else {
+            self.increase_indent()?
+                .format_content(content_fn)?
+                .decrease_indent()?;
+        }
+        self.inline_container_stack.pop();
+        self.append(right_brace)
     }
 
     fn format_comments_internal(
@@ -321,6 +332,10 @@ impl Formatter {
         self.subpath_options_stack.last().unwrap().as_ref()
     }
 
+    fn in_inline_container(&self) -> bool {
+        *self.inline_container_stack.last().unwrap_or(&false)
+    }
+
     fn enter_scope(&mut self, name_or_star: &str) {
         let mut subpath_options_to_push = None;
         if let Some(current_subpath_options_ref) = self.get_current_subpath_options() {
@@ -356,14 +371,9 @@ impl Formatter {
         value: &mut Value,
         is_first: bool,
         is_last: bool,
-        container_has_pending_comments: bool,
+        _container_has_pending_comments: bool,
     ) -> Result<&mut Formatter, Error> {
-        let collapsed = is_first
-            && is_last
-            && value.is_primitive()
-            && !value.has_comments()
-            && !container_has_pending_comments
-            && self.options_in_scope().collapse_containers_of_one;
+        let inline = self.in_inline_container();
         match name {
             // Above the enter_scope(...), the container's SubpathOptions affect formatting
             // and below, formatting is affected by named property or item SubpathOptions.
@@ -371,8 +381,10 @@ impl Formatter {
             Some(name) => self.enter_scope(name),
             None => self.enter_scope("*"),
         }
-        if collapsed {
-            self.append(" ")?;
+        if inline {
+            if is_first {
+                self.append(" ")?;
+            }
         } else {
             if is_first {
                 self.start_next_line()?;
@@ -387,8 +399,12 @@ impl Formatter {
         //   ^^^^^^^^^^
         // Named property or item SubpathOptions affect Formatting above exit_scope(...)
         // and below, formatting is affected by the container's SubpathOptions.
-        if collapsed {
-            self.append(" ")?;
+        if inline {
+            if is_last {
+                self.append(" ")?;
+            } else {
+                self.append(", ")?;
+            }
         } else {
             self.append_comma(is_last)?
                 .append_end_of_line_comment(value.comments().end_of_line())?

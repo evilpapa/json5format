@@ -14,14 +14,14 @@
 //!     FLAGS:
 //!     -h, --help                  Prints help information
 //!     -n, --no_trailing_commas    Suppress trailing commas (otherwise added by default)
-//!     -o, --one_element_lines     Objects or arrays with a single child should collapse to a
-//!                                 single line; no trailing comma
 //!     -r, --replace               Replace (overwrite) the input file with the formatted result
 //!     -s, --sort_arrays           Sort arrays of primitive values (string, number, boolean, or
 //!                                 null) lexicographically
 //!     -V, --version               Prints version information
 //!
 //!     OPTIONS:
+//!     -o, --inline <inline>    Collapse arrays or objects with at most this many children onto
+//!                              a single line [default: 0]
 //!     -i, --indent <indent>    Indent by the given number of spaces [default: 4]
 //!
 //!     ARGS:
@@ -96,7 +96,7 @@ fn main() -> Result<()> {
     let options = FormatOptions {
         indent_by: args.indent,
         trailing_commas: !args.no_trailing_commas,
-        collapse_containers_of_one: args.one_element_lines,
+        max_inline_children: args.inline,
         sort_array_items: args.sort_arrays,
         ..Default::default()
     };
@@ -124,9 +124,9 @@ struct Opt {
     #[structopt(short, long)]
     no_trailing_commas: bool,
 
-    /// Objects or arrays with a single child should collapse to a single line; no trailing comma
-    #[structopt(short, long)]
-    one_element_lines: bool,
+    /// Collapse arrays or objects with at most this many children onto a single line
+    #[structopt(short = "o", long = "inline", default_value = "0")]
+    inline: usize,
 
     /// Sort arrays of primitive values (string, number, boolean, or null) lexicographically
     #[structopt(short, long)]
@@ -160,7 +160,13 @@ impl Opt {
 #[cfg(test)]
 impl Opt {
     fn args() -> Self {
-        if let Some(test_args) = unsafe { &self::tests::TEST_ARGS } {
+        let test_args = {
+            let state = self::tests::TEST_STATE
+                .lock()
+                .expect("failed to lock TEST_STATE");
+            state.args.clone()
+        };
+        if let Some(test_args) = test_args {
             Self::from_clap(
                 &Self::clap()
                     .get_matches_from_safe(test_args)
@@ -172,9 +178,15 @@ impl Opt {
     }
 
     fn from_stdin(mut buf: &mut String) -> Result<usize, io::Error> {
-        if let Some(test_buffer) = unsafe { &mut self::tests::TEST_BUFFER } {
-            *buf = test_buffer.clone();
-            Ok(buf.as_bytes().len())
+        let test_buffer = {
+            let state = self::tests::TEST_STATE
+                .lock()
+                .expect("failed to lock TEST_STATE");
+            state.buffer.clone()
+        };
+        if let Some(test_buffer) = test_buffer {
+            *buf = test_buffer;
+            Ok(buf.len())
         } else {
             io::stdin().read_to_string(&mut buf)
         }
@@ -184,7 +196,10 @@ impl Opt {
         if filename == "-" {
             let buf = std::str::from_utf8(&bytes)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            if let Some(test_buffer) = unsafe { &mut self::tests::TEST_BUFFER } {
+            let mut state = self::tests::TEST_STATE
+                .lock()
+                .expect("failed to lock TEST_STATE");
+            if let Some(test_buffer) = &mut state.buffer {
                 *test_buffer = buf.to_string();
             } else {
                 print!("{}", buf);
@@ -205,9 +220,18 @@ impl Opt {
 mod tests {
 
     use super::*;
+    use std::sync::Mutex;
 
-    pub(crate) static mut TEST_ARGS: Option<Vec<&str>> = None;
-    pub(crate) static mut TEST_BUFFER: Option<String> = None;
+    #[derive(Default)]
+    pub(crate) struct TestState {
+        pub(crate) args: Option<Vec<String>>,
+        pub(crate) buffer: Option<String>,
+    }
+
+    pub(crate) static TEST_STATE: Mutex<TestState> = Mutex::new(TestState {
+        args: None,
+        buffer: None,
+    });
 
     #[test]
     fn test_main() {
@@ -270,32 +294,18 @@ mod tests {
     },
     {
       to: "#elements",
-      protocol: [
-        "/svc/fuchsia.cobalt.LoggerFactory",
-        "/svc/fuchsia.logger.LogSink"
-      ],
+      protocol: [ "/svc/fuchsia.cobalt.LoggerFactory", "/svc/fuchsia.logger.LogSink" ],
       from: "realm"
     }
   ],
-  collections: [
-    {
-      name: "elements",
-      durability: "transient"
-    }
-  ],
+  collections: [ { name: "elements", durability: "transient" } ],
   use: [
     { runner: "elf" },
-    {
-      protocol: "/svc/fuchsia.sys2.Realm",
-      from: "framework"
-    },
+    { protocol: "/svc/fuchsia.sys2.Realm", from: "framework" },
     {
       from: "realm",
       to: "#elements",
-      protocol: [
-        "/svc/fuchsia.cobalt.LoggerFactory",
-        "/svc/fuchsia.logger.LogSink"
-      ]
+      protocol: [ "/svc/fuchsia.cobalt.LoggerFactory", "/svc/fuchsia.logger.LogSink" ]
     }
   ],
   children: [],
@@ -310,22 +320,28 @@ mod tests {
   }
 }
 "##;
-        unsafe {
-            TEST_ARGS = Some(vec![
+        {
+            let mut state = TEST_STATE.lock().expect("failed to lock TEST_STATE");
+            state.args = Some(vec![
                 "formatjson5",
                 "--replace",
                 "--no_trailing_commas",
-                "--one_element_lines",
+                "--inline",
+                "2",
                 "--sort_arrays",
                 "--indent",
                 "2",
                 "-",
-            ]);
-            TEST_BUFFER = Some(example_json5.to_string());
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect());
+            state.buffer = Some(example_json5.to_string());
         }
         main().expect("test failed");
-        assert!(unsafe { &TEST_BUFFER }.is_some());
-        assert_eq!(unsafe { TEST_BUFFER.as_ref().unwrap() }, expected);
+        let state = TEST_STATE.lock().expect("failed to lock TEST_STATE");
+        assert!(state.buffer.is_some());
+        assert_eq!(state.buffer.as_ref().unwrap(), expected);
     }
 
     #[test]
@@ -334,18 +350,18 @@ mod tests {
         assert_eq!(args.files.len(), 0);
         assert_eq!(args.replace, false);
         assert_eq!(args.no_trailing_commas, false);
-        assert_eq!(args.one_element_lines, false);
+        assert_eq!(args.inline, 0);
         assert_eq!(args.sort_arrays, false);
         assert_eq!(args.indent, 4);
 
         let some_filename = "some_file.json5";
         let args = Opt::from_iter(
-            vec!["formatjson5", "-r", "-n", "-o", "-s", "-i", "2", some_filename].iter(),
+            vec!["formatjson5", "-r", "-n", "-o", "2", "-s", "-i", "2", some_filename].iter(),
         );
         assert_eq!(args.files.len(), 1);
         assert_eq!(args.replace, true);
         assert_eq!(args.no_trailing_commas, true);
-        assert_eq!(args.one_element_lines, true);
+        assert_eq!(args.inline, 2);
         assert_eq!(args.sort_arrays, true);
         assert_eq!(args.indent, 2);
 

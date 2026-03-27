@@ -938,7 +938,7 @@ fn trim_error_line_and_indicator(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::test_error, proptest::prelude::*};
+    use {super::*, proptest::prelude::*};
 
     fn gen_error_line_test(
         error_line: &str,

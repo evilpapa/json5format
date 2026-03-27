@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//! Integration tests for json5format.
+
 #![deny(missing_docs)]
 use {
     crate::{test_error, Json5Format},
@@ -1097,13 +1099,13 @@ fn test_options() {
     let options = FormatOptions { ..Default::default() };
     assert_eq!(options.indent_by, 4);
     assert!(options.trailing_commas);
-    assert!(!options.collapse_containers_of_one);
+    assert_eq!(options.max_inline_children, 0);
     assert!(!options.sort_array_items);
 
     let options = FormatOptions {
         indent_by: 2,
         trailing_commas: false,
-        collapse_containers_of_one: true,
+        max_inline_children: 1,
         sort_array_items: true,
         options_by_path: hashmap! {
             "/*" => hashset! {
@@ -1123,7 +1125,7 @@ fn test_options() {
             },
             "/*/use" => hashset! {
                 PathOption::TrailingCommas(false),
-                PathOption::CollapseContainersOfOne(false),
+                PathOption::MaxInlineChildren(0),
                 PathOption::SortArrayItems(true),
                 PathOption::PropertyNameOrder(vec![
                     "name",
@@ -1154,7 +1156,7 @@ fn test_options() {
 
     assert_eq!(options.indent_by, 2);
     assert!(!options.trailing_commas);
-    assert!(options.collapse_containers_of_one);
+    assert_eq!(options.max_inline_children, 1);
     assert!(options.sort_array_items);
 
     let path_options = options
@@ -1169,12 +1171,10 @@ fn test_options() {
         _ => panic!("PathOption enum as key should return a value of the same type"),
     };
     match path_options
-        .get(&PathOption::CollapseContainersOfOne(true))
-        .expect("Expected to find a PathOption::CollapseContainersOfOne setting")
+        .get(&PathOption::MaxInlineChildren(usize::MAX))
+        .expect("Expected to find a PathOption::MaxInlineChildren setting")
     {
-        PathOption::CollapseContainersOfOne(collapsed_container_of_one) => {
-            assert!(!(*collapsed_container_of_one))
-        }
+        PathOption::MaxInlineChildren(max_inline_children) => assert_eq!(*max_inline_children, 0),
         _ => panic!("PathOption enum as key should return a value of the same type"),
     };
     match path_options
@@ -1199,7 +1199,7 @@ fn test_duplicated_key_in_subpath_options_is_ignored() {
         options_by_path: hashmap! {
             "/*/use" => hashset! {
                 PathOption::TrailingCommas(false),
-                PathOption::CollapseContainersOfOne(false),
+                PathOption::MaxInlineChildren(0),
                 PathOption::SortArrayItems(true),
                 PathOption::PropertyNameOrder(vec![
                     "name",
@@ -1238,14 +1238,14 @@ fn test_duplicated_key_in_subpath_options_is_ignored() {
                 },
                 None => panic!("Expected to find a PathOption::TrailingCommas setting"),
             }
-            match path_options.get(&PathOption::CollapseContainersOfOne(true)) {
+            match path_options.get(&PathOption::MaxInlineChildren(usize::MAX)) {
                 Some(path_option) => match path_option {
-                    PathOption::CollapseContainersOfOne(collapsed_container_of_one) => {
-                        assert!(!(*collapsed_container_of_one));
+                    PathOption::MaxInlineChildren(max_inline_children) => {
+                        assert_eq!(*max_inline_children, 0);
                     }
                     _ => panic!("PathOption enum as key should return a value of the same type"),
                 },
-                None => panic!("Expected to find a PathOption::CollapseContainersOfOne setting"),
+                None => panic!("Expected to find a PathOption::MaxInlineChildren setting"),
             }
             match path_options.get(&PathOption::SortArrayItems(true)) {
                 Some(path_option) => match path_option {
@@ -1274,7 +1274,7 @@ fn test_duplicated_key_in_subpath_options_is_ignored() {
 fn test_format_options() {
     test_format(FormatTest {
         options: Some(FormatOptions {
-            collapse_containers_of_one: true,
+            max_inline_children: 1,
             sort_array_items: true, // but use options_by_path to turn this off for program args
             options_by_path: hashmap! {
                 "/*" => hashset! {
@@ -1293,7 +1293,7 @@ fn test_format_options() {
                     ])
                 },
                 "/*/program" => hashset! {
-                    PathOption::CollapseContainersOfOne(false),
+                    PathOption::MaxInlineChildren(0),
                     PathOption::PropertyNameOrder(vec![
                         "binary",
                         "args",
@@ -1521,9 +1521,9 @@ fn test_no_trailing_commas() {
 }
 
 #[test]
-fn test_collapse_containers_of_one() {
+fn test_max_inline_children() {
     test_format(FormatTest {
-        options: Some(FormatOptions { collapse_containers_of_one: true, ..Default::default() }),
+        options: Some(FormatOptions { max_inline_children: 1, ..Default::default() }),
         input: r##"{
     offer: [
         {
@@ -1605,6 +1605,56 @@ fn test_collapse_containers_of_one() {
     ],
     children: [],
     program: { binary: "bin/session_manager" },
+}
+"##,
+        ..Default::default()
+    })
+    .unwrap();
+}
+
+#[test]
+fn test_inline_small_containers() {
+    test_format(FormatTest {
+        options: Some(FormatOptions { max_inline_children: 2, ..Default::default() }),
+        input: r##"{
+    object_two: {
+        alpha: 1,
+        beta: 2,
+    },
+    array_two: [
+        "a",
+        "b",
+    ],
+    nested_two: {
+        inner: {
+            left: 1,
+            right: 2,
+        },
+        list: [
+            {
+                ok: true,
+            },
+            {
+                ok: false,
+            },
+        ],
+    },
+    object_three: {
+        a: 1,
+        b: 2,
+        c: 3,
+    },
+}
+"##,
+        expected: r##"{
+    object_two: { alpha: 1, beta: 2 },
+    array_two: [ "a", "b" ],
+    nested_two: { inner: { left: 1, right: 2 }, list: [ { ok: true }, { ok: false } ] },
+    object_three: {
+        a: 1,
+        b: 2,
+        c: 3,
+    },
 }
 "##,
         ..Default::default()

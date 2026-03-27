@@ -23,14 +23,14 @@ formatjson5 [FLAGS] [OPTIONS] [files]...
 FLAGS:
 -h, --help                  Prints help information
 -n, --no_trailing_commas    Suppress trailing commas (otherwise added by default)
--o, --one_element_lines     Objects or arrays with a single child should collapse to a
-                            single line; no trailing comma
 -r, --replace               Replace (overwrite) the input file with the formatted result
 -s, --sort_arrays           Sort arrays of primitive values (string, number, boolean, or
                             null) lexicographically
 -V, --version               Prints version information
 
 OPTIONS:
+-o, --inline <inline>    Collapse arrays or objects with at most this many children onto
+                         a single line [default: 0]
 -i, --indent <indent>    Indent by the given number of spaces [default: 4]
 
 ARGS:
