@@ -20,8 +20,8 @@
 //!     -V, --version               Prints version information
 //!
 //!     OPTIONS:
-//!     -o, --inline <inline>    Collapse arrays or objects with at most this many children onto
-//!                              a single line [default: 0]
+//!     -o, --inline <inline>    Collapse arrays or objects with at most this many primitive or
+//!                              empty-container children onto a single line [default: 0]
 //!     -i, --indent <indent>    Indent by the given number of spaces [default: 4]
 //!
 //!     ARGS:
@@ -124,7 +124,8 @@ struct Opt {
     #[structopt(short, long)]
     no_trailing_commas: bool,
 
-    /// Collapse arrays or objects with at most this many children onto a single line
+    /// Collapse arrays or objects with at most this many primitive or empty-container children
+    /// onto a single line
     #[structopt(short = "o", long = "inline", default_value = "0")]
     inline: usize,
 
@@ -161,9 +162,7 @@ impl Opt {
 impl Opt {
     fn args() -> Self {
         let test_args = {
-            let state = self::tests::TEST_STATE
-                .lock()
-                .expect("failed to lock TEST_STATE");
+            let state = self::tests::TEST_STATE.lock().expect("failed to lock TEST_STATE");
             state.args.clone()
         };
         if let Some(test_args) = test_args {
@@ -179,9 +178,7 @@ impl Opt {
 
     fn from_stdin(mut buf: &mut String) -> Result<usize, io::Error> {
         let test_buffer = {
-            let state = self::tests::TEST_STATE
-                .lock()
-                .expect("failed to lock TEST_STATE");
+            let state = self::tests::TEST_STATE.lock().expect("failed to lock TEST_STATE");
             state.buffer.clone()
         };
         if let Some(test_buffer) = test_buffer {
@@ -196,9 +193,7 @@ impl Opt {
         if filename == "-" {
             let buf = std::str::from_utf8(&bytes)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            let mut state = self::tests::TEST_STATE
-                .lock()
-                .expect("failed to lock TEST_STATE");
+            let mut state = self::tests::TEST_STATE.lock().expect("failed to lock TEST_STATE");
             if let Some(test_buffer) = &mut state.buffer {
                 *test_buffer = buf.to_string();
             } else {
@@ -228,10 +223,8 @@ mod tests {
         pub(crate) buffer: Option<String>,
     }
 
-    pub(crate) static TEST_STATE: Mutex<TestState> = Mutex::new(TestState {
-        args: None,
-        buffer: None,
-    });
+    pub(crate) static TEST_STATE: Mutex<TestState> =
+        Mutex::new(TestState { args: None, buffer: None });
 
     #[test]
     fn test_main() {
@@ -322,20 +315,22 @@ mod tests {
 "##;
         {
             let mut state = TEST_STATE.lock().expect("failed to lock TEST_STATE");
-            state.args = Some(vec![
-                "formatjson5",
-                "--replace",
-                "--no_trailing_commas",
-                "--inline",
-                "2",
-                "--sort_arrays",
-                "--indent",
-                "2",
-                "-",
-            ]
-            .into_iter()
-            .map(String::from)
-            .collect());
+            state.args = Some(
+                vec![
+                    "formatjson5",
+                    "--replace",
+                    "--no_trailing_commas",
+                    "--inline",
+                    "2",
+                    "--sort_arrays",
+                    "--indent",
+                    "2",
+                    "-",
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            );
             state.buffer = Some(example_json5.to_string());
         }
         main().expect("test failed");

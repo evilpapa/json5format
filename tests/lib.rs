@@ -1649,12 +1649,39 @@ fn test_inline_small_containers() {
         expected: r##"{
     object_two: { alpha: 1, beta: 2 },
     array_two: [ "a", "b" ],
-    nested_two: { inner: { left: 1, right: 2 }, list: [ { ok: true }, { ok: false } ] },
+    nested_two: {
+        inner: { left: 1, right: 2 },
+        list: [
+            { ok: true },
+            { ok: false },
+        ],
+    },
     object_three: {
         a: 1,
         b: 2,
         c: 3,
     },
+}
+"##,
+        ..Default::default()
+    })
+    .unwrap();
+}
+
+#[test]
+fn test_inline_container_with_empty_children() {
+    test_format(FormatTest {
+        options: Some(FormatOptions { max_inline_children: 3, ..Default::default() }),
+        input: r##"{
+    compact: {
+        empty_obj: {},
+        empty_arr: [],
+        enabled: true,
+    },
+}
+"##,
+        expected: r##"{
+    compact: { empty_obj: {}, empty_arr: [], enabled: true },
 }
 "##,
         ..Default::default()

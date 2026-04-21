@@ -47,9 +47,7 @@ impl SubpathOptions {
             use PathOption::*;
             match path_option {
                 TrailingCommas(path_value) => self.options.trailing_commas = *path_value,
-                MaxInlineChildren(path_value) => {
-                    self.options.max_inline_children = *path_value
-                }
+                MaxInlineChildren(path_value) => self.options.max_inline_children = *path_value,
                 SortArrayItems(path_value) => self.options.sort_array_items = *path_value,
                 PropertyNameOrder(property_names) => {
                     for (index, property_name) in property_names.iter().enumerate() {
@@ -277,9 +275,7 @@ impl Formatter {
         if inline {
             self.format_content(content_fn)?;
         } else {
-            self.increase_indent()?
-                .format_content(content_fn)?
-                .decrease_indent()?;
+            self.increase_indent()?.format_content(content_fn)?.decrease_indent()?;
         }
         self.inline_container_stack.pop();
         self.append(right_brace)

@@ -400,14 +400,18 @@ impl Value {
         self.comments().has_comments()
     }
 
-    pub(crate) fn can_inline(&self, max_inline_children: usize) -> bool {
+    /// Returns true if this value can appear inside a single-line container.
+    ///
+    /// Primitive values and empty child containers are allowed. Non-empty arrays and objects force
+    /// their parent container to remain multi-line.
+    pub(crate) fn can_be_inline_child(&self) -> bool {
         if self.has_comments() {
             return false;
         }
         match self {
             Value::Primitive { .. } => true,
-            Value::Array { val, .. } => val.can_inline(max_inline_children),
-            Value::Object { val, .. } => val.can_inline(max_inline_children),
+            Value::Array { val, .. } => val.is_empty(),
+            Value::Object { val, .. } => val.is_empty(),
         }
     }
 }
@@ -517,14 +521,15 @@ pub struct Array {
 }
 
 impl Array {
+    fn is_empty(&self) -> bool {
+        self.items.is_empty() && self.contained_comments.pending_comments.is_empty()
+    }
+
     fn can_inline(&self, max_inline_children: usize) -> bool {
         max_inline_children > 0
             && self.items.len() <= max_inline_children
             && self.contained_comments.pending_comments.is_empty()
-            && self
-                .items
-                .iter()
-                .all(|item| item.borrow().can_inline(max_inline_children))
+            && self.items.iter().all(|item| item.borrow().can_be_inline_child())
     }
 
     /// Returns an iterator over the array items. Items must be dereferenced to access
@@ -726,14 +731,15 @@ pub struct Object {
 }
 
 impl Object {
+    fn is_empty(&self) -> bool {
+        self.properties.is_empty() && self.contained_comments.pending_comments.is_empty()
+    }
+
     fn can_inline(&self, max_inline_children: usize) -> bool {
         max_inline_children > 0
             && self.properties.len() <= max_inline_children
             && self.contained_comments.pending_comments.is_empty()
-            && self
-                .properties
-                .iter()
-                .all(|property| property.value.borrow().can_inline(max_inline_children))
+            && self.properties.iter().all(|property| property.value.borrow().can_be_inline_child())
     }
 
     /// Retrieves an iterator from the `properties` field.

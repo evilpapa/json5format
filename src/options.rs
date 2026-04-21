@@ -63,8 +63,9 @@ pub struct FormatOptions {
     /// Add a trailing comma after the last element in an array or object.
     pub trailing_commas: bool,
 
-    /// If an array or object has at most this many items, and no internal comments, collapse the
-    /// array or object to a single line. Set to 0 to disable inline containers.
+    /// If an array or object has at most this many items, no internal comments, and no direct
+    /// child values that are non-empty arrays or objects, collapse the container to a single line.
+    /// Set to 0 to disable inline containers.
     pub max_inline_children: usize,
 
     /// If true, sort array primitive values lexicographically. Be aware that the order may not
